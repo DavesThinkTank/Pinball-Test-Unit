@@ -2,7 +2,7 @@
 ## Version 2001.01
 ## for the Arduino Mega 2560 Rev3
 
-The new Pinball Test Unit (PTU) from Dave’s Think Tank improves tremendously on the self-tests of any pinball running a Bally AS-2518-17, AS-2518-35, Stern MPU-100, Stern MPU-200, or Alltek replacement MPU board. What kind of improvements are we talking about? Instead of just running through the solenoids over and over, the solenoid test now allows you to stop on and repeatedly fire a single solenoid, then stop it from firing while you make adjustments, then start it up again. It will tell you if vibration from a solenoid is setting off a switch. Similar improvements can be found in the switch test: fixing bouncing switches and even switch matrix errors just became a breeze! Not to mention new tests like the DIP switch review. 
+The new Pinball Test Unit (PTU) from Dave’s Think Tank improves tremendously on the self-tests of any pinball running a Bally AS-2518-17, AS-2518-35, Stern MPU-100, Stern MPU-200, or Alltek replacement MPU board. What kind of improvements are we talking about? Instead of just running through the solenoids over and over, the solenoid test now allows you to stop on and repeatedly fire a single solenoid, then stop it from firing while you make adjustments, then start it up again. It will tell you if vibration from a solenoid is setting off a switch. Similar improvements can be found in the switch test: fixing bouncing switches and even switch matrix errors just became a breeze! Not to mention new tests like the DIP switch review. Check out the new and extended test below:
 
 ## Test 1: Light Test
 
