@@ -2,11 +2,13 @@
 ## Version 2001.01
 ## for the Arduino Mega 2560 Rev3
 
-The new Pinball Test Unit (PTU) from Dave’s Think Tank improves tremendously on the self-tests of any pinball running a Bally AS-2518-17, AS-2518-35, Stern MPU-100, Stern MPU-200, or Alltek replacement MPU board. What kind of improvements are we talking about? Instead of just running through the solenoids over and over, the solenoid test now allows you to stop on and repeatedly fire a single solenoid, then stop it from firing while you make adjustments, then start it up again. It will tell you if vibration from a solenoid is setting off a switch. Similar improvements can be found in the switch test: fixing bouncing switches and even switch matrix errors just became a breeze! Not to mention new tests like the DIP switch review. Check out the new and extended test below:
+The new Pinball Test Unit (PTU) from Dave’s Think Tank improves tremendously on the self-tests of any pinball running a Bally AS-2518-17, AS-2518-35, Stern MPU-100, Stern MPU-200, or Alltek replacement MPU board. 
+
+What kind of improvements are we talking about? Instead of just running through the solenoids over and over, the solenoid test now allows you to stop on and repeatedly fire a single solenoid, then stop it from firing while you make adjustments, then start it up again. It will tell you if vibration from a solenoid is setting off a switch. Similar improvements can be found in the switch test: fixing bouncing switches and even switch matrix errors just became a breeze! Not to mention new tests like the DIP switch review. Check out the new and extended tests below:
 
 ## Test 1: Light Test
 
-The first test will repeatedly flash all the switched illumination lights on the playfield and in the backbox. This is similar to the regular Bally light test, except the PTU allows you to now press a button to stop all the all the lights from flashing except one. Then you can scroll through the lights individually.
+The first test will repeatedly flash all the switched illumination lights on the playfield and in the backbox. This is similar to the regular Bally light test, except the PTU allows you to now press a button to stop all the lights from flashing except one. Then you can scroll through the lights individually.
 
 So why would you want to do this? Well, maybe you just find it easier to work on a light when the whole machine isn’t blinking at you! In some machines, these light switches control not just lights, but also switched relays, and it can be important to find them, especially if they're not working! You can also make up a numbered list of lights, making it easier to locate problems in the future. A numbered list is essential if you intend to do any Arduino programming of your own. There are lots of advantages to expanding this test!
 
@@ -36,7 +38,7 @@ The flippers are enabled throughout the solenoid test. This is therefore a good 
 
 Pressing the self-test again takes you to the switch test. Switches that are stuck on will be identified by number in the displays, like the original test. However, the PTU allows up to four stuck switches to be identified on four displays. The original Bally test displayed only the lowest-numbered stuck switch, making testing of multiple stuck switches and switch-matrix issues difficult. The number of closed switches is also displayed in the Credit display, for cases where more than four switches are closed at once. The switch numbers used by the PTU are the same as in your game manual.
 
-In order to allow testing of the primary, secondary, and end switches, there are no special functions assigned to these buttons during the stuck switch test. The one exception to this is, double-clicking the primary switch will activate all solenoids identified in step 9 earlier. This allows you to easily test and work with drop target and other tricky switches, and then quickly and easily reset them.
+In order to allow testing of the primary, secondary, and end switches, there are no special functions assigned to these buttons during the stuck switch test. The one exception to this is, double-clicking the primary switch will activate any solenoids you need to reset. This allows you to easily test and work with drop target and other tricky switches, and then quickly and easily reset them.
 
 ##Detecting Switch Matrix Issues with the Stuck Switch Test
 
@@ -55,16 +57,9 @@ Testing for switch matrix issues:
 
 ##Test 5: Switch Bounce (Double-Hit) Test
 
-Ball in Play:		Test #05
-Display #1:		Most recent switch hit
-Display #2:		The time between hits in milliseconds
-Primary Switch:		Double-click to reset all solenoids identified in step 9
-
 Pressing the self-test button again takes you to the switch bounce test. Switches on your pinball machine may develop a “bounce”, where hitting them registers two or more hits. If you suspect this may be happening with a switch on your machine, this test can help you to identify the issue. 
 
 To determine whether a switch is bouncing, activate the suspected switch with a pinball. If it registers only once, the switch number will appear in the Player 1 display, and all other displays will be blank. If it registers two or more times, the time between hits will appear in the Player 2 display (measured in milliseconds). If a switch is bouncing, try cleaning and re-gapping that switch. If the problem is persistent you may need to replace the switch. 
-
-In order to allow testing of the primary, secondary, and end switches, there are no special functions assigned to these buttons during the switch bounce test. The one exception to this is, double-clicking the primary switch will activate all solenoids identified in step 9 earlier. This allows you to easily test and work with drop target and other tricky switches, and then quickly and easily reset them.
 
 ##Test 6: Sound Test
 
@@ -76,7 +71,7 @@ Be aware, each sound will take five seconds before proceeding to the next. This 
 
 Testing and reviewing the sounds can be challenging. If a sound is making it difficult to test subsequent sounds, try the “skip” feature.
 
-The sound test currently only works with Bally Squawk & Talk boards, or their equivalents, such as the Geeteoh replacement boards, or a WAV Trigger board. It also does not work with the very early S&T boards, or their Geeteoh replacements, on games like the 1979 Bally Star Trek. Later releases may be able to expand on this.
+The sound test currently only works with Bally Squawk & Talk boards, or their equivalents, such as the Geeteoh replacement boards, or a WAV Trigger board. It also does not work with the very early Bally Sound Module boards, or their Geeteoh replacements, on games like the 1979 Bally Star Trek. Later releases may be able to expand on this.
  
 ##Test 7A: DIP Switch Test for 7-Digit Displays
 
@@ -89,9 +84,6 @@ All 32 DIP switches are shown in the 32 display digits as either 1 (ON) or 0 (OF
 By pressing the primary switch, you can scroll through switches 1 to 32. Stop on a switch and you can use the secondary switch to change its setting temporarily. 
 
 This can be useful to detect defective DIP switches, or just to review the DIP settings without having to open the backbox.
-
-Press the red self-test button to return to step 1. From there, press the self-test button again to go back into the tests. You also have the option at that point to repeat the data entry steps and re-enter the game data.
-
  
 ##Test 7B: DIP Switch Test for 6-Digit Displays
 
