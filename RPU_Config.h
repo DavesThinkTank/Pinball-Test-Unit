@@ -157,9 +157,9 @@
 
 
 // Internal Data Storage
-#define RPU_EEPROM_DIP_BANK                              1 // 4
-#define RPU_EEPROM_SELECTED_GAME                         5 // 1
-#define RPU_EEPROM_START_TABLE_DATA                      6 // 0 (used in formula below to locate data)
+#define RPU_EEPROM_DIP_BANK                           1001 // 4
+#define RPU_EEPROM_SELECTED_GAME                      1005 // 1
+#define RPU_EEPROM_START_TABLE_DATA                   1006 // 0 (used in formula below to locate data)
 #define RPU_EEPROM_PRIMARY_SWITCH                        0 // 1
 #define RPU_EEPROM_SECONDARY_SWITCH                      1 // 1
 #define RPU_EEPROM_END_SWITCH                            2 // 1
@@ -174,8 +174,11 @@
 #define RPU_EEPROM_NUM_SWITCHES                         16 // 1
 #define RPU_EEPROM_NUM_SOUNDS                           17 // 1
 #define RPU_EEPROM_SOUND_BOARD                          18 // 1
+#define RPU_EEPROM_MIN_SOUND                            19 // 2
 
-#define RPU_EEPROM_TABLE_ROW_SIZE 19 // data byte = RPU_EEPROM_START_TABLE_DATA + RPU_EEPROM_SELECT_GAME * RPU_EEPROM_TABLE_ROW_SIZE + RPU_EEPROM_dataname
+#define RPU_EEPROM_TABLE_ROW_SIZE 30 
+// data byte = RPU_EEPROM_START_TABLE_DATA + RPU_EEPROM_SELECT_GAME * RPU_EEPROM_TABLE_ROW_SIZE + RPU_EEPROM_dataname
+// Row size 30 used to allow future expansion without shifting data
 
 
 

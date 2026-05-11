@@ -32,9 +32,10 @@
 #define MACHINE_STATE_LAMP_DATA             3
 #define MACHINE_STATE_SOLENOID_DATA         4
 #define MACHINE_STATE_SWITCH_DATA           5
-#define MACHINE_STATE_SOUND_DATA            6
-#define MACHINE_STATE_SOUND_BOARD           7
-#define MACHINE_STATE_IDENTIFY_DROP_TARGETS 8
+#define MACHINE_STATE_SOUND_BOARD           6
+#define MACHINE_STATE_SOUND_DATA            7
+#define MACHINE_STATE_MIN_SOUND             8
+#define MACHINE_STATE_IDENTIFY_DROP_TARGETS 9
 
 // SWITCHES_WITH_TRIGGERS are for switches that will automatically
 // activate a solenoid (like in the case of a chime that rings on a rollover)

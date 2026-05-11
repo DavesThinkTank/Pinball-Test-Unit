@@ -59,6 +59,17 @@ Version 2024.12 by Dave's Think Tank
   - Converted from BSOS (Bally/Stern Operating System) to RPU (Retro Pin Upgrade). RPU is an extension of BSOS. BSOS is no longer maintained.
   - Removed references to RPU_OS_USE_GEETEOH (BSOS_OS_USE_GEETEOH). RPU_OS_USE_GEETEOH is now defined in FGyyyypmm.ino as a user definition, where it belongs.
 
+  Version 2026.05 by Dave's Think Tank
+
+  - Updated to include improvements made to Star Trek and Flash Gordon, 2026.04
+  - Replaced ResetHold with ResetBeingHeld in all tests.
+  - Modified code to fully distinguish between single click, double click, and long press of reset button. For example, previously a double click registered as
+    a single click followed by a double click.
+  - Modified light test to allow testing of brightness level. Test covers off to full brightness, and flashing.
+  - Replaced use of other button with double-click of reset button. Now only reset button required for all tests, with click, double-click, or hold.
+  - Extended display test to allow cycling displays with value 8 only.
+- Increase time to stop sound from 1/2 second to one second.
+
  */
 
 #include <Arduino.h>
@@ -75,7 +86,8 @@ unsigned long DisplayDIP[6];
 int l, m, n, count; // xxx
 
 // xxx EEPROM Variables
-byte LselectedGame; // xxx L for local
+byte LselectedGame; // L for local
+byte lightLevel;
 byte LnumDisplays;
 byte LnumDigits;
 byte LnumCredBIPDigits;
@@ -85,6 +97,7 @@ byte LnumSolenoids;
 byte LsolenoidRelay;
 byte LnumSwitches;
 byte LnumSounds;
+unsigned int LminSound;
 byte LsoundBoard;
 byte LdropTargetID[6];
 byte LmaxDropTargets = 6;
@@ -94,9 +107,12 @@ unsigned long LastSelfTestChange = 0;
 unsigned long SavedValue = 0;
 unsigned long SolSwitchTimer = 0;
 unsigned long ResetHold = 0;
+unsigned long otherHold = 0;
 unsigned long NextSpeedyValueChange = 0;
 unsigned long NumSpeedyChanges = 0;
 unsigned long LastResetPress = 0;
+unsigned long LastOtherPress = 0;
+unsigned long LastAnyOtherPress = 0;
 
 unsigned long SwitchTimer = 0;
 byte HoldSwitch = SW_SELF_TEST_SWITCH;
@@ -113,6 +129,15 @@ byte SoundToPlay = 0;
 boolean SolenoidCycle = true;
 boolean SolenoidOn = true;
 
+boolean coinLockoutOn;
+boolean flippersOn;
+boolean display8s;
+
+byte curSwitch;
+boolean resetDoubleClick = false;
+boolean otherDoubleClick = false;
+boolean anyOtherClick = false;
+boolean anyOtherDoubleClick = false;
 
 int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long CurrentTime, byte resetSwitch, byte otherSwitch, byte endSwitch) {
   // Set resetSwitch to the game / credit button on the front of your pinball.
@@ -120,34 +145,66 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
   //   I like to use SW_COIN_3, as I have it wired to a handy button for free game purposes!
   // Set endSwitch to the slam switch. This is used to end self test and return to attract mode.
 
-  byte curSwitch = RPU_PullFirstFromSwitchStack();
   int returnState = curState;
-  boolean resetDoubleClick = false;
 
-  if (curSwitch==resetSwitch) {
+  curSwitch = RPU_PullFirstFromSwitchStack();
+  
+  resetDoubleClick = false;
+  otherDoubleClick = false;
+  anyOtherClick = false;
+  anyOtherDoubleClick = false;
+
+  if (curSwitch == resetSwitch) {
+    curSwitch = SWITCH_STACK_EMPTY;
     ResetHold = CurrentTime;
-    if ((CurrentTime-LastResetPress)<400) {
+    if ((CurrentTime - LastResetPress) < 400) {
       resetDoubleClick = true;
-      curSwitch = SWITCH_STACK_EMPTY;
+      LastResetPress = 0;
     }
-    LastResetPress = CurrentTime;
+    else {
+      LastResetPress = CurrentTime;
+    }
   }
 
-  if (ResetHold!=0 && !RPU_ReadSingleSwitchState(resetSwitch)) {
+  if (!RPU_ReadSingleSwitchState(resetSwitch) && CurrentTime - LastResetPress > 400 && LastResetPress != 0) {
+    curSwitch = resetSwitch;
+    LastResetPress = 0;
+  }
+
+  if (curSwitch == otherSwitch) {
+    otherHold = CurrentTime;
+    if ((CurrentTime - LastOtherPress) < 400) {
+      otherDoubleClick = true;
+      curSwitch = SWITCH_STACK_EMPTY;
+    }
+    LastOtherPress = CurrentTime;
+  }
+
+  if (curSwitch != resetSwitch && curSwitch != otherSwitch && curSwitch != endSwitch && curSwitch != SW_SELF_TEST_SWITCH && curSwitch != SWITCH_STACK_EMPTY) {
+    anyOtherClick = true;
+    if ((CurrentTime - LastAnyOtherPress) < 400) {
+      anyOtherDoubleClick = true;
+      anyOtherClick = false;
+    }
+    LastAnyOtherPress = CurrentTime;
+  }
+
+  if (ResetHold != 0 && !RPU_ReadSingleSwitchState(resetSwitch)) {
     ResetHold = 0;
     NextSpeedyValueChange = 0;
   }
 
   boolean resetBeingHeld = false;
-  if (ResetHold!=0 && (CurrentTime-ResetHold)>1300) {
+  if (ResetHold != 0 && (CurrentTime - ResetHold) > 1000) {
     resetBeingHeld = true;
-    if (NextSpeedyValueChange==0) {
+    LastResetPress = 0;
+    if (NextSpeedyValueChange == 0) {
       NextSpeedyValueChange = CurrentTime;
       NumSpeedyChanges = 0;
     }
   }
 
-  if ((curSwitch==endSwitch) && (curState != MACHINE_STATE_TEST_STUCK_SWITCHES)) {
+  if ((curSwitch == endSwitch) && (curState != MACHINE_STATE_TEST_STUCK_SWITCHES)) {
     return MACHINE_STATE_ATTRACT;
   }
   
@@ -169,6 +226,8 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       LnumSwitches           = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (LselectedGame * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_NUM_SWITCHES);
       LnumSounds             = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (LselectedGame * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_NUM_SOUNDS);
       LsoundBoard            = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (LselectedGame * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_SOUND_BOARD);
+      LminSound              = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (LselectedGame * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_MIN_SOUND) * 256
+                              + RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (LselectedGame * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_MIN_SOUND + 1); 
       
       for (count = 0; count < LmaxDropTargets; ++count) 
         LdropTargetID[count] = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (LselectedGame * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_DROP_TARGET_ID + count);
@@ -192,27 +251,50 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       RPU_SetDisplayCredits(0, true, true, LnumCredBIPDigits == 6);
       RPU_SetDisplayBallInPlay(1, true, true, LnumCredBIPDigits == 6);
       RPU_TurnOffAllLamps();
+      lightLevel = 5; // Flashing
       for (count = 0; count  <=  LnumLamps; count++) {
         RPU_SetLampState(count, 1, 0, 500);
       }
       CurValue = 99;
       RPU_SetDisplay(0, CurValue, true);
+      RPU_SetDisplay(1, lightLevel, true);
       LastSolTestTime = CurrentTime;
     }
-    if (curSwitch==resetSwitch || resetDoubleClick || (ResetHold && CurrentTime > LastSolTestTime + 250)) {
-      LastSolTestTime = CurrentTime;
-      CurValue += 1;
-      if (CurValue>99) CurValue = 0;
-      if (CurValue > LnumLamps) {
-        CurValue = 99;
+
+    if (resetDoubleClick || curSwitch == otherSwitch) {
+      lightLevel += 1;
+      if (lightLevel > 5) lightLevel = 0;
+      if (CurValue == 99) {
         for (count = 0; count  <=  LnumLamps; count++) {
-          RPU_SetLampState(count, 1, 0, 500);
+          RPU_SetLampState(count, lightLevel != 0, lightLevel == 5 ? 0: lightLevel - 1, lightLevel == 5 ? 500 : 0);
         }
       } else {
         RPU_TurnOffAllLamps();
-        RPU_SetLampState(CurValue, 1, 0, 0);
+        RPU_SetLampState(CurValue, lightLevel != 0, lightLevel == 5 ? 0: lightLevel - 1, lightLevel == 5 ? 500 : 0);
+      }
+      RPU_SetDisplay(1, lightLevel, true);   
+    }
+
+    if (curSwitch==resetSwitch || (resetBeingHeld && CurrentTime > LastSolTestTime + 250)) {
+      LastSolTestTime = CurrentTime;
+      CurValue += 1;
+      if (CurValue>99) {
+        CurValue = 0;
+        lightLevel = 1;
+        RPU_SetDisplay(1, lightLevel, true);
+      }
+      if (CurValue > LnumLamps) {
+        CurValue = 99;
+        lightLevel = 5; // Flashing
+        RPU_SetDisplay(1, lightLevel, true);
+        for (count = 0; count  <=  LnumLamps; count++) {
+          RPU_SetLampState(count,  lightLevel != 0, lightLevel == 5 ? 0: lightLevel - 1, lightLevel == 5 ? 500 : 0);
+        }
+      } else {
+        RPU_TurnOffAllLamps();
+        RPU_SetLampState(CurValue,  lightLevel != 0, lightLevel == 5 ? 0: lightLevel - 1, lightLevel == 5 ? 500 : 0);
       }      
-      RPU_SetDisplay(0, CurValue, true);  
+      RPU_SetDisplay(0, CurValue, true);
     }    
   } else if (curState==MACHINE_STATE_TEST_DISPLAYS) { //                                                  *** Test Displays ***
     if (curStateChanged) {
@@ -224,8 +306,9 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       }
       CurValue = 0;
       LastSolTestTime = CurrentTime;
+      display8s = 0;
     }
-    if (curSwitch==resetSwitch || resetDoubleClick || (ResetHold && CurrentTime > LastSolTestTime + 250)) {
+    if (curSwitch==resetSwitch || (resetBeingHeld && CurrentTime > LastSolTestTime + 250)) {
       CurValue += 1;
       LastSolTestTime = CurrentTime;
       if (LnumDigits == 7) {
@@ -234,8 +317,9 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       else {
         if (CurValue>(LnumCredBIPDigits == 6 ? 30 : 31)) CurValue = 0;
       }
-    }    
-    RPU_CycleAllDisplays(CurrentTime, CurValue, LnumDigits == 6);
+    }
+    if (resetDoubleClick || curSwitch == otherSwitch) display8s = !display8s;
+    RPU_CycleAllDisplays(CurrentTime, CurValue, LnumDigits == 6, display8s);
 
   } else if (curState==MACHINE_STATE_TEST_SOLENOIDS) { //                                                 *** Test Solenoids ***
     if (curStateChanged) {
@@ -243,7 +327,8 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       LastSolTestTime = CurrentTime;
       SolSwitchTimer = CurrentTime;
       RPU_EnableSolenoidStack(); 
-      RPU_SetDisableFlippers(false);
+      RPU_SetDisableFlippers(flippersOn = true);
+      RPU_SetCoinLockout(coinLockoutOn = true);
       RPU_SetDisplayBlank(4, 0);
       RPU_SetDisplayBallInPlay(3, true, true, LnumCredBIPDigits == 6);
       SolenoidCycle = true;
@@ -251,8 +336,8 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       SavedValue = 0;
       RPU_PushToSolenoidStack(SavedValue, 5, false, LsolenoidRelay);
     } 
-    if (curSwitch==resetSwitch || resetDoubleClick) SolenoidCycle = !SolenoidCycle;
-    if (curSwitch == otherSwitch) SolenoidOn = !SolenoidOn;
+    if (curSwitch==resetSwitch) SolenoidCycle = !SolenoidCycle;
+    if (resetDoubleClick || curSwitch == otherSwitch) SolenoidOn = !SolenoidOn;
     if (curSwitch!=resetSwitch && curSwitch != otherSwitch && curSwitch != endSwitch && curSwitch != SWITCH_STACK_EMPTY && curSwitch != SW_SELF_TEST_SWITCH) {
       RPU_SetDisplayCredits(curSwitch, true, true, LnumCredBIPDigits == 6);
       RPU_SetDisplay(3, CurrentTime - SolSwitchTimer, true, 3);
@@ -265,11 +350,17 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
     if ((CurrentTime-LastSolTestTime)>1000) {
       if (SolenoidCycle) {
         SavedValue += 1;
-        if (SavedValue > LnumSolenoids) SavedValue = 0;
+        if (SavedValue > LnumSolenoids + 2) SavedValue = 0;
       }
       if (SolenoidOn) {
-        RPU_PushToSolenoidStack(SavedValue, 5, false, LsolenoidRelay);
         SolSwitchTimer = CurrentTime;
+
+        if (SavedValue == LnumSolenoids + 1)  // Test coin lockout
+          RPU_SetCoinLockout(coinLockoutOn = !coinLockoutOn);
+        else if (SavedValue == LnumSolenoids + 2)  // Test flipper enable
+          RPU_SetDisableFlippers(flippersOn = !flippersOn);
+        else
+          RPU_PushToSolenoidStack(SavedValue, 5);
       }
       RPU_SetDisplay(0, SavedValue, true);
       LastSolTestTime = CurrentTime;
@@ -324,7 +415,7 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
     }
 
     
-    if (curSwitch == HoldSwitch && curSwitch != SWITCH_STACK_EMPTY && curSwitch != SW_SELF_TEST_SWITCH) { // double-hit detected on a single switch
+    if (curSwitch == HoldSwitch && curSwitch != SWITCH_STACK_EMPTY && curSwitch != SW_SELF_TEST_SWITCH && CurrentTime - SwitchTimer < 500) { // double-hit detected on a single switch
       RPU_SetDisplay(0, curSwitch, true);
       RPU_SetDisplay(1, CurrentTime - SwitchTimer, true);
       SwitchTimer = CurrentTime;
@@ -365,27 +456,27 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       SoundToPlay += 1;
       if (SoundToPlay > LnumSounds) SoundToPlay = 0;
       SoundPlayed = false;
-      RPU_SetDisplay(0,(unsigned long) SoundToPlay, true);
+      RPU_SetDisplay(0,(unsigned long) LminSound + SoundToPlay, true);
       LastSolTestTime = CurrentTime;
       SolenoidCycle = true;
     }
     else {
       if (curSwitch==resetSwitch || resetDoubleClick) {
-        if (CurrentTime - LastSolTestTime <= 500) { // Allow 0.5 seconds to click and move forward without playing sound
+        if (CurrentTime - LastSolTestTime <= 1000) { // Allow 1 second to click and move forward without playing sound
           SoundToPlay +=1;
           if (SoundToPlay > LnumSounds) SoundToPlay = 0;
-          RPU_SetDisplay(0, (unsigned long)SoundToPlay, true);
+          RPU_SetDisplay(0, (unsigned long) LminSound + SoundToPlay, true);
           LastSolTestTime = CurrentTime - 500;
           }
         else {
           SolenoidCycle = !SolenoidCycle;
           }
         }
-      if ((CurrentTime - LastSolTestTime) >= 500 && !SoundPlayed) {
+      if ((CurrentTime - LastSolTestTime) >= 1000 && !SoundPlayed) {
         if (LsoundBoard == 0)                         // S&T or Geeteoh
           RPU_PlaySoundSAndT(SoundToPlay);
         else if (LsoundBoard == 1) {                  // Wave Trigger
-          returnState = 10000 + SoundToPlay;          // Main program has all the info to play sounds using WAV Trigger!
+          returnState = 10000 + LminSound + SoundToPlay;          // Main program has all the info to play sounds using WAV Trigger!
           }
         
         SoundPlaying = SoundToPlay;
@@ -398,7 +489,7 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
           }
         LastSolTestTime = CurrentTime;
         SoundPlayed = false;
-        RPU_SetDisplay(0, (unsigned long)SoundToPlay, true);
+        RPU_SetDisplay(0, (unsigned long) LminSound + SoundToPlay, true);
       }
     }
   } else if (curState==MACHINE_STATE_TEST_DIP_SWITCHES && LnumDigits == 7) {  //                                              *** Test DIP Switches, 32 digital displays ***
@@ -428,7 +519,7 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       LastSolTestTime = CurrentTime;
     }
    
-    if (curSwitch==resetSwitch || resetDoubleClick || (ResetHold && CurrentTime > LastSolTestTime + 250)) {
+    if (curSwitch==resetSwitch || (resetBeingHeld && CurrentTime > LastSolTestTime + 250)) {
       if (xDisplay < 4) RPU_SetDisplayBlank(CurDisplay, 127); // Reset previous digit to not flash
       else RPU_SetDisplayBlank(4, 108);
       
@@ -444,7 +535,7 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       xDisplay = 4 + CurValue / 16; // Ball in play or credit window
     }
 
-    if (curSwitch == otherSwitch) { // Flip current digit in current display
+    if (resetDoubleClick || curSwitch == otherSwitch) { // Flip current digit in current display
       dipBankVal[CurDisplay] = dipBankVal[CurDisplay] ^ (1 << CurDigit); // exclusive or function, reverses current digit
       RPU_WriteByteToEEProm(RPU_EEPROM_DIP_BANK + CurDisplay, dipBankVal[CurDisplay]);
 
@@ -500,7 +591,7 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       LastSolTestTime = CurrentTime;
     }
    
-    if (curSwitch==resetSwitch || resetDoubleClick || (ResetHold && CurrentTime > LastSolTestTime + 250)) {
+    if (curSwitch==resetSwitch || (resetBeingHeld && CurrentTime > LastSolTestTime + 250)) {
       if (xDisplay < 4) RPU_SetDisplayBlank(CurDisplay, 127); // Reset previous digit to not flash
       else RPU_SetDisplayBlank(4, 108);
       
@@ -522,7 +613,7 @@ int RunBaseSelfTest(int curState, boolean curStateChanged, unsigned long Current
       holdDisplay = CurDisplay;
     }
 
-    if (curSwitch == otherSwitch) { // Flip current digit in current display
+    if (resetDoubleClick || curSwitch == otherSwitch) { // Flip current digit in current display
       dipBankVal[CurDisplay] = dipBankVal[CurDisplay] ^ (1 << CurDigit); // exclusive or function, reverses current digit
       RPU_WriteByteToEEProm(RPU_EEPROM_DIP_BANK + CurDisplay, dipBankVal[CurDisplay]);
 

@@ -20,6 +20,11 @@
     Version 2025.01 by Dave's Think Tank
 
     - Wrote three functions to allow flashing of a single digit: RPU_SetDigitFlash, RPU_SetDigitFlashCredits, and RPU_SetDigitFlashBallInPlay.
+
+    Version ST2026.04 by Dave's Think Tank
+
+    - Extended RPU_CycleAllDisplays with boolean display8, to allow cycling displays with value 8 only.
+
  */
 
 
@@ -1739,10 +1744,14 @@ void RPU_SetDisplayBallInPlay(int value, boolean displayOn, boolean showBothDigi
 
 #endif
 
-void RPU_CycleAllDisplays(unsigned long curTime, byte digitNum, boolean sixdigits) {
-  int displayDigit = (curTime/250)%10;
+void RPU_CycleAllDisplays(unsigned long curTime, byte digitNum, boolean sixdigits, boolean display8 = 0) {
+  int displayDigit;
   unsigned long value;
   
+  if (display8)
+    displayDigit = 8;
+  else
+    displayDigit = (curTime / 250) % 10;
   if (sixdigits)
     value = displayDigit*111111;
   else  

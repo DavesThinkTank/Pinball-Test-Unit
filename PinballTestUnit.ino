@@ -1,8 +1,7 @@
 /**************************************************************************
 
 Version 2001.01 by Dave's Think Tank
-
-Additions and changes in this version:
+Version 2026.05 by Dave's Think Tank
 
 - Initial version created from Flash Gordon v2024.12
 - Reduced to self-tests only for use in PinballTestUnit
@@ -10,10 +9,32 @@ Additions and changes in this version:
 - Converted from BSOS (Bally/Stern Operating System) to RPU (Retro Pin Upgrade). RPU is an extension of BSOS. BSOS is no longer maintained.
 - WAV Trigger audio functions adapted from https://github.com/RetroPinUpgrade/SBM23 (Silverball Mania)
 
+Changes since version released:
+
+- Switch bounce: clear time in player 2 display if hit time exceeds 500 ms
+
+Version 2026.05 by Dave's Think Tank
+
+Changes:
+
+- Updated to include improvements made to Star Trek and Flash Gordon self-tests, 2026.04
+- Modified code to fully distinguish between single click, double click, and long press of reset button. For example, previously a double click registered as
+  a single click followed by a double click.
+- Duplicated secondary button with double-click of primary button. Now only primary button required for all tests, with click, double-click, or hold.
+- Extended display test to allow cycling displays with value 8 only.
+- Added coin door lockout and K1 flipper relay to solenoid test.
+- Increase time to stop sound from 1/2 second to one second.
+
+Bugs:
+
+- If the Pinball Test Unit software is copied onto an Arduino containing game software, and then the game software is copied back onto that Arduino,
+  some of the game data could be missing. In particular, the high score was frequently overwritten. This has been fixed.
+- Sound was not working for some setups. Added an input for minimum sound number to handle WAV Triggers with sounds at very high values.
+
 */
 
 //======================================= OPERATOR GAME ADJUSTMENTS =======================================
-#define VERSION_NUMBER  2001.01   // Version number appears in Display #1 / Credit display at start of game
+#define VERSION_NUMBER  2026.05   // Version number appears in Display #1 / Credit display at start of game
 //=========================================================================================================
 
 #include "RPU_Config.h"
@@ -54,6 +75,7 @@ byte numSolenoids;
 byte solenoidRelay;
 byte numSwitches;
 byte numSounds;
+unsigned int minSound;
 byte soundBoard;
 byte dropTargetID[6];
 
@@ -72,10 +94,19 @@ boolean switchesVerified = false;
 boolean validGame = false;
 boolean relayStage = false;
 
+boolean upDoubleClick = false;
+boolean downDoubleClick = false;
+boolean upBeingHeld;
+boolean downBeingHeld;
+unsigned long LastUpPress = 0;
+unsigned long LastDownPress = 0;
+unsigned long LastUpTestTime = 0;
+unsigned long LastDownTestTime = 0;
 byte upswitch;
 byte downswitch;
 boolean upHold, downHold;
 unsigned long upHoldTime, downHoldTime;
+
 boolean doneNothing = true;
 byte curdisp;
 
@@ -87,7 +118,7 @@ boolean isDropTarget;
 int SoundEffectsNormalVolume = -4;
 int SongDuckedVolume = -20;
 
-void PlaySoundEffect(byte soundEffectNum, int gain = 100);
+void PlaySoundEffect(unsigned int soundEffectNum, int gain = 100);
 #endif
 
 void test(byte val) { // display a test value
@@ -115,6 +146,7 @@ void SetSelectedGameDefaults() {
   solenoidRelay = 99;
   numSwitches = 39;
   numSounds = 255;
+  minSound = 0;
   soundBoard = 0;
   for (i = 0; i < maxDropTargets; ++i)
     dropTargetID[i] = 0xFF;
@@ -137,6 +169,7 @@ boolean ValidGameData() {
   if (solenoidRelay > numLamps && solenoidRelay != 99) return false;
   if (numSwitches == 0 || numSwitches > maxSwitch) return false;
   if (numSounds == 0 || numSounds > maxSound) return false;
+  if (minSound != 0 && soundBoard == 0) return false;
   if (soundBoard > maxSoundBoard) return false;
   for (i = 0; i < maxDropTargets; ++i)
     if (dropTargetID[i] > maxSolenoid && dropTargetID[i] != 0xFF) return false;
@@ -175,6 +208,8 @@ void ReadSelectedGame(unsigned short game) {
   numSwitches       = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_NUM_SWITCHES);
   numSounds         = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_NUM_SOUNDS);
   soundBoard        = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_SOUND_BOARD);
+  minSound          = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_MIN_SOUND) * 256
+                      + RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_MIN_SOUND + 1);
   
   for (i = 0; i < 6; ++i) 
     dropTargetID[i] = RPU_ReadByteFromEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_DROP_TARGET_ID + i);
@@ -199,6 +234,7 @@ void ReadSelectedGame(unsigned short game) {
     if (numSwitches == 0 || numSwitches > maxSwitch) numSwitches = maxSwitch;
     if (numSounds == 0 || numSounds > maxSound) numSounds = maxSound;
     if (soundBoard > maxSoundBoard) soundBoard = maxSoundBoard;
+    if (soundBoard == 0) minSound = 0;
     SetValidDTData();
   }
 }
@@ -224,6 +260,8 @@ boolean WriteSelectedGame(unsigned short game) {
     RPU_WriteByteToEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_NUM_SWITCHES, numSwitches);
     RPU_WriteByteToEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_NUM_SOUNDS, numSounds);
     RPU_WriteByteToEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_SOUND_BOARD, soundBoard);
+    RPU_WriteByteToEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_MIN_SOUND, minSound / 256);
+    RPU_WriteByteToEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_MIN_SOUND + 1, minSound % 256);
 
     for (i = 0; i < 6; ++i) 
       RPU_WriteByteToEEProm(RPU_EEPROM_START_TABLE_DATA + (game * RPU_EEPROM_TABLE_ROW_SIZE) + RPU_EEPROM_DROP_TARGET_ID + i, dropTargetID[i]);
@@ -677,6 +715,63 @@ int SwitchData(int curState, boolean curStateChanged) {
 
 
 
+// #################### Sound Board ####################
+int SoundBoard(int curState, boolean curStateChanged) {
+  int returnState = curState;
+  byte curSwitch = RPU_PullFirstFromSwitchStack();
+  
+  if (curStateChanged) {
+    RPU_DisableSolenoidStack();        
+    RPU_SetDisableFlippers(true);
+    RPU_TurnOffAllLamps();
+    
+    RPU_SetDisplay(0, soundBoard, true, 2);
+    RPU_SetDisplayBlank(1, 0x00);
+    RPU_SetDisplayBlank(2, 0x00);
+    RPU_SetDisplayBlank(3, 0x00);
+    RPU_SetDisplayBallInPlay(curState + 1, true, true, numCredBIPDigits == 6); // Ball in play displays current test step
+    RPU_SetDisplayCredits(0, false, true, numCredBIPDigits == 6);
+  }
+
+  if (curSwitch == SW_SELF_TEST_SWITCH && (CurrentTime - GetLastSelfTestChangedTime()) > 250) {
+    SetLastSelfTestChangedTime(CurrentTime);
+    return returnState += 1; 
+  }
+
+  upHold = false;
+  if (curSwitch == primarySwitch) // set time up switch hit if up switch hit
+    upHoldTime = CurrentTime;
+  if (upHoldTime != 0 && !RPU_ReadSingleSwitchState(primarySwitch)) // zero out time hit if up switch released
+    upHoldTime = 0;
+  if (upHoldTime != 0 && (CurrentTime - upHoldTime) > 333) { // recognize when up switch held for 333 ms
+    upHold = true;
+    upHoldTime = CurrentTime;
+  }
+
+  downHold = false;
+  if (curSwitch == secondarySwitch) // same for down switch
+    downHoldTime = CurrentTime;
+  if (downHoldTime != 0 && !RPU_ReadSingleSwitchState(secondarySwitch))
+    downHoldTime = 0;
+  if (downHoldTime != 0 && (CurrentTime - downHoldTime) > 333) {
+    downHold = true;
+    downHoldTime = CurrentTime;
+  }
+
+  if (curSwitch == primarySwitch || upHold) {
+    soundBoard += 1;
+    if (soundBoard > maxSoundBoard) soundBoard = 0;
+  } else if (curSwitch == secondarySwitch || downHold) {
+    soundBoard -= 1;
+    if (soundBoard == 255) soundBoard = maxSoundBoard;
+  }
+
+  RPU_SetDisplayFlash(0, soundBoard, CurrentTime, 250, 2);
+  return returnState;
+}
+
+
+
 // #################### Sound Data ####################
 int SoundData(int curState, boolean curStateChanged) {
   int returnState = curState;
@@ -735,9 +830,15 @@ int SoundData(int curState, boolean curStateChanged) {
 
 
 
-// #################### Sound Board ####################
-int SoundBoard(int curState, boolean curStateChanged) {
+// #################### Sound Data ####################
+int MinSoundData(int curState, boolean curStateChanged) {
   int returnState = curState;
+
+  if (soundBoard != 1) { // Only for WAV Trigger
+    minSound = 0;
+    return curState + 1;
+  }
+
   byte curSwitch = RPU_PullFirstFromSwitchStack();
   
   if (curStateChanged) {
@@ -745,48 +846,106 @@ int SoundBoard(int curState, boolean curStateChanged) {
     RPU_SetDisableFlippers(true);
     RPU_TurnOffAllLamps();
     
-    RPU_SetDisplay(0, soundBoard, true, 2);
+    RPU_SetDisplay(0, minSound, true, 2);
     RPU_SetDisplayBlank(1, 0x00);
     RPU_SetDisplayBlank(2, 0x00);
     RPU_SetDisplayBlank(3, 0x00);
     RPU_SetDisplayBallInPlay(curState + 1, true, true, numCredBIPDigits == 6); // Ball in play displays current test step
     RPU_SetDisplayCredits(0, false, true, numCredBIPDigits == 6);
+
+    LastUpPress = 0;
+    LastDownPress = 0;
+    LastUpTestTime = CurrentTime;
+    LastDownTestTime = CurrentTime;
   }
 
   if (curSwitch == SW_SELF_TEST_SWITCH && (CurrentTime - GetLastSelfTestChangedTime()) > 250) {
     SetLastSelfTestChangedTime(CurrentTime);
     return returnState += 1; 
   }
+  upDoubleClick = false;
+  downDoubleClick = false;
 
-  upHold = false;
-  if (curSwitch == primarySwitch) // set time up switch hit if up switch hit
+  if (curSwitch == primarySwitch) { // Primary hit. Start clock for double-click and hold. Identify double-click. 
+    curSwitch = SWITCH_STACK_EMPTY;
     upHoldTime = CurrentTime;
-  if (upHoldTime != 0 && !RPU_ReadSingleSwitchState(primarySwitch)) // zero out time hit if up switch released
-    upHoldTime = 0;
-  if (upHoldTime != 0 && (CurrentTime - upHoldTime) > 333) { // recognize when up switch held for 333 ms
-    upHold = true;
-    upHoldTime = CurrentTime;
+    if ((CurrentTime - LastUpPress) < 400) {
+      upDoubleClick = true;
+      LastUpPress = 0;
+    }
+    else {
+      LastUpPress = CurrentTime;
+    }
   }
 
-  downHold = false;
-  if (curSwitch == secondarySwitch) // same for down switch
+  if (!RPU_ReadSingleSwitchState(primarySwitch) && CurrentTime - LastUpPress > 400 && LastUpPress != 0) { // Identify primary hit (not double-click)
+    curSwitch = primarySwitch;
+    LastUpPress = 0;
+  }
+
+  if (upHoldTime != 0 && !RPU_ReadSingleSwitchState(primarySwitch)) { // Identify end of hold
+   upHoldTime = 0;
+  }
+
+  upBeingHeld = false;
+  if (upHoldTime != 0 && (CurrentTime - upHoldTime) > 1000) { // identify hold after one second, setup for first hold increase
+    upBeingHeld = true;
+    LastUpPress = 0;
+  }
+  
+  if (curSwitch == secondarySwitch) { // Secondary hit. Start clock for double-click and hold. Identify double-click. 
+    curSwitch = SWITCH_STACK_EMPTY;
     downHoldTime = CurrentTime;
-  if (downHoldTime != 0 && !RPU_ReadSingleSwitchState(secondarySwitch))
-    downHoldTime = 0;
-  if (downHoldTime != 0 && (CurrentTime - downHoldTime) > 333) {
-    downHold = true;
-    downHoldTime = CurrentTime;
+    if ((CurrentTime - LastDownPress) < 400) {
+      downDoubleClick = true;
+      LastDownPress = 0;
+    }
+    else {
+      LastDownPress = CurrentTime;
+    }
   }
 
-  if (curSwitch == primarySwitch || upHold) {
-    soundBoard += 1;
-    if (soundBoard > maxSoundBoard) soundBoard = 0;
-  } else if (curSwitch == secondarySwitch || downHold) {
-    soundBoard -= 1;
-    if (soundBoard == 255) soundBoard = maxSoundBoard;
+  if (!RPU_ReadSingleSwitchState(secondarySwitch) && CurrentTime - LastDownPress > 400 && LastDownPress != 0) { // Identify secondary hit (not double-click)
+    curSwitch = secondarySwitch;
+    LastDownPress = 0;
   }
 
-  RPU_SetDisplayFlash(0, soundBoard, CurrentTime, 250, 2);
+  if (downHoldTime != 0 && !RPU_ReadSingleSwitchState(secondarySwitch)) { // Identify end of hold
+   downHoldTime = 0;
+  }
+
+  downBeingHeld = false;
+  if (downHoldTime != 0 && (CurrentTime - downHoldTime) > 1000) { // identify hold after one second, setup for first hold increase
+    downBeingHeld = true;
+    LastDownPress = 0;
+  }
+
+  if (curSwitch == primarySwitch || (upBeingHeld && CurrentTime > LastUpTestTime + 250)) { // Increase minSound on primary or hold
+    minSound += 1;
+    LastUpTestTime = CurrentTime;
+  }
+  
+  if (curSwitch == secondarySwitch || (downBeingHeld && CurrentTime > LastDownTestTime + 250)) { // Decrease minSound on secondary or hold
+    LastDownTestTime = CurrentTime;
+    if (minSound >= 1) 
+      minSound -= 1;
+    else
+    minSound = 0;
+  }
+
+  if (upDoubleClick) {
+    minSound = 256 * (int) ((minSound + 256) / 256); // Increase minSound by 256 on primary double-click
+  }
+  
+  if (downDoubleClick) {
+    if (minSound >= 1) 
+      minSound -= 1;
+    else
+    minSound = 0;
+    minSound = 256 * (int) (minSound / 256); // Decrease minSound on secondary double-click
+  }
+
+  RPU_SetDisplayFlash(0, minSound, CurrentTime, 250, 2);
   return returnState;
 }
 
@@ -895,10 +1054,12 @@ void loop() {
     newMachineState = SolenoidData(MachineState, MachineStateChanged);
   } else if (MachineState==MACHINE_STATE_SWITCH_DATA) {
     newMachineState = SwitchData(MachineState, MachineStateChanged);
-  } else if (MachineState==MACHINE_STATE_SOUND_DATA) {
-    newMachineState = SoundData(MachineState, MachineStateChanged);
   } else if (MachineState==MACHINE_STATE_SOUND_BOARD) {
     newMachineState = SoundBoard(MachineState, MachineStateChanged);
+  } else if (MachineState==MACHINE_STATE_SOUND_DATA) {
+    newMachineState = SoundData(MachineState, MachineStateChanged);
+  } else if (MachineState==MACHINE_STATE_MIN_SOUND) {
+    newMachineState = MinSoundData(MachineState, MachineStateChanged);
   } else if (MachineState==MACHINE_STATE_IDENTIFY_DROP_TARGETS) {
     newMachineState = IdentifyDropTargets(MachineState, MachineStateChanged);
   } else {
@@ -1324,7 +1485,7 @@ inline void StopSoundEffect(byte soundEffectNum) {
 
 #if defined(RPU_OS_USE_WAV_TRIGGER) || defined(RPU_OS_USE_WAV_TRIGGER_1p3)
 
-void PlaySoundEffect(byte soundEffectNum, int gain) {
+void PlaySoundEffect(unsigned int soundEffectNum, int gain) {
 
   if (MusicLevel == 0) return;
   if (MusicLevel < 3) {
